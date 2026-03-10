@@ -2,7 +2,9 @@
 title: "To Bee or not To Bee"
 author: "Ceili DeMarais"
 date: "2026-03-07"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
