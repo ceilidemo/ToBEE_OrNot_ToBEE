@@ -2,4 +2,4 @@
 
 (That is the question...) 🐝🐝🐝🐝🐝
 
-Open the .rmd file and get going!
+Recommendation: clone/download this repo and open the .Rproj file in RStudio. Follow the directions in the .rmd and get playing!
