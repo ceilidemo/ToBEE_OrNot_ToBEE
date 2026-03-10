@@ -1,0 +1,30 @@
+---
+title: "To Bee or not To Bee"
+author: "Ceili DeMarais"
+date: "2026-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## TO BEE OR NOT TO BEE!
+
+Welcome to the interactive game based on "Honey Bee Alarm Pheromone Mediates Communication in Plant–Pollinator–Predator Interactions." (Wang & Tan, 2019) 
+
+This game will put you in the mind of a bee, forcing you to make decisions based on a variety of complicated encounters. Do not worry, you do not come without tools. The first stop in the game will take you to the perfumary where BEEtrice will provide you with a choice of pheromones to take with you and use throughout the day. Choose wisely... your hive is depending on you. 
+
+## How to play?? 
+
+Download this repository on your local computer and open it in R.Studio. 
+Make sure your directory is set to the file location and run the following line!
+
+```{r}
+source("game_script.R")
+```
+
+## Read the paper here: 
+
+Wang Z, Tan K. Honey Bee Alarm Pheromone Mediates Communication in Plant-Pollinator-Predator Interactions. Insects. 2019 Oct 21;10(10):366. doi: 10.3390/insects10100366.
+
