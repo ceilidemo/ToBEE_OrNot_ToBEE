@@ -54,7 +54,7 @@ die <- function(funny_msg, science_msg) {
 
 win_phase <- function(msg, science_msg) {
   divider()
-  cat("\n  *** GOOD CHOICE! Survived to live another hour ***\n\n")
+  cat("\n  *** Survived to live another hour ***\n\n")
   cat(" ", msg, "\n")
   cat("\n  --- Why: ---\n")
   cat(" ", science_msg, "\n")
@@ -181,7 +181,7 @@ visit_perfumary <- function() {
   
   while (length(backpack) < 3) {
     slot <- length(backpack) + 1
-    cat(paste0("\n  Choose pheromone number", slot, " for your backpack:\n"))
+    cat(paste0("\n  Choose pheromone number ", slot, " for your backpack: (type number)\n"))
     choice <- pick_option("", length(pheromone_keys))
     selected_key <- pheromone_keys[choice]
     
