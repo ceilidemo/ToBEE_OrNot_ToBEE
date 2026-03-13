@@ -52,18 +52,34 @@ die <- function(funny_msg, science_msg) {
   return(FALSE)
 }
 
-win_phase <- function(msg, science_msg) {
+win_phase <- function(msg, science_msg, nectar_pts = 0, nectar_loss = 0) {
   divider()
   cat("\n  *** Survived to live another hour ***\n\n")
   cat(" ", msg, "\n")
   cat("\n  --- Why: ---\n")
   cat(" ", science_msg, "\n")
+  
+  net_change <- nectar_pts - nectar_loss
+  
+  if (nectar_pts > 0) {
+    cat("\n  +", nectar_pts, " points to hive nectar cache!\n")
+  }
+  if (nectar_loss > 0) {
+    cat("\n  -", nectar_loss, " points lost (predation/parasites/defense cost)\n")
+  }
+  if (net_change > 0) {
+    cat("\n  NET: +", net_change, " points\n")
+  } else if (net_change < 0) {
+    cat("\n  NET: ", net_change, " points\n")
+  } else if (net_change == 0 && (nectar_pts > 0 || nectar_loss > 0)) {
+    cat("\n  NET: 0 points (gain offset by loss)\n")
+  }
+  
   divider()
   press_enter()
-  return(TRUE)
+  return(net_change)
 }
 
-# Picking pheromone from backpack
 pick_from_backpack <- function(backpack, include_nothing = TRUE) {
   cat("\n  What do you release from your backpack?\n")
   bp_keys <- names(backpack)
@@ -71,14 +87,14 @@ pick_from_backpack <- function(backpack, include_nothing = TRUE) {
     cat(paste0("[", i, "] ", backpack[[bp_keys[i]]]$name, "\n"))
     cat(paste0("Hint: ", backpack[[bp_keys[i]]]$hint, "\n"))
   }
-  if (include_nothing) { # give option to not release anything
+  if (include_nothing) {
     cat(paste0("[", length(bp_keys) + 1, "] Actually... release nothing\n"))
     choice <- pick_option("  > ", length(bp_keys) + 1)
     if (choice == length(bp_keys) + 1) return("nothing")
   } else {
     choice <- pick_option("  > ", length(bp_keys))
   }
-  return(bp_keys[choice]) #returns you to the other choices
+  return(bp_keys[choice])
 }
 
 
@@ -89,7 +105,7 @@ all_pheromones <- list(
   isopentyl_acetate = list(
     name   = "* BEST SELLER * 'Isopentyl Acetate' (Call for Backup!)",
     smell  = "Ripe bananas. Every bee knows this one.",
-    hint   = "RECRUITS nestmates & triggers stinging. Works in ALL Apis species. WARNING: also attracts hive beetles.",
+    hint   = "RECRUITS hivemates & triggers stinging. Works in ALL Apis species. WARNING: also attracts hive beetles.",
     effect = "recruit_and_sting"
   ),
   
@@ -103,7 +119,7 @@ all_pheromones <- list(
   two_heptanone = list(
     name   = "'2-Heptanone' (Flower already TAKEN!)",
     smell  = "Faintly cheesy, like sharp cheddar.",
-    hint   = "MARKS flowers as already foraged. NOT a nestmate recruiter.",
+    hint   = "MARKS flowers as already foraged. NOT a hivemate recruiter.",
     effect = "forage_mark"
   ),
   
@@ -124,7 +140,7 @@ all_pheromones <- list(
   hexyl_acetate = list(
     name   = "'Hexyl Acetate' (Recruit without stinging!)",
     smell  = "Fresh and fruity",
-    hint   = "RECRUITS nestmates to a threat but does not itself elicit stinging. Gentler than isopentyl_acetate.",
+    hint   = "RECRUITS hivemates to a threat but does not itself elicit stinging. Gentler than isopentyl_acetate.",
     effect = "recruit_only"
   )
 )
@@ -203,17 +219,13 @@ visit_perfumary <- function() {
 
 
 # ---- PHASE 1: The Flower Patch -----------------------------
-# foraging economics, recruitment vs marking
-# dead body avoidance, kairomone setup for Phase 2
 
-phase_flower_patch <- function(backpack) {
+phase_flower_patch <- function(backpack, nectar_cache = 0) {
   
-  # state variables that will come in later
-  # I am thinking imma have these build up over the course of the day
   recruited_loudly  <- FALSE
   marked_flower     <- FALSE
   saw_dead_bee      <- FALSE
-  beetle_risk       <- FALSE   # turns TRUE if isopentyl used here
+  beetle_risk       <- FALSE
   
   repeat {
     
@@ -223,9 +235,9 @@ phase_flower_patch <- function(backpack) {
 
   The sun is up. Time to Forage.
   You leave the hive with your backpack 
-  and a determination to bring back nourishment for the hive. 
+  and a determination for nectar. 
 
-  A half mile away you find a Calliandra haematocephala flower in full bloom!
+  A half mile away you find a Calliandra flower in full bloom!
   From a quick glance you can tell this flower is prime stuff.
 
   BUT... before you land, you notice something familiar on the petals.
@@ -237,7 +249,6 @@ phase_flower_patch <- function(backpack) {
     
     choice <- pick_option("\n  Your choice: ", 3)
     
-    # backpack quick check
     if (choice == 3) {
       show_backpack(backpack)
       cat("\n  Now what?\n")
@@ -246,14 +257,13 @@ phase_flower_patch <- function(backpack) {
       choice <- pick_option("  > ", 2)
     }
     
-    # Check out the situation choice
     if (choice == 1) {
       saw_dead_bee <- TRUE
       narrate("
   You hover closer and see... a dead bee?
-  It smells faintly of a certain best elling alarm pheromone...
+  It smells faintly of a certain best selling alarm pheromone...
   Stale... fading... but unmistakable. 
-  Something bad happened here.
+  Something bad happened here
 
   You glance around at the other flowers and see other bees flitting about. 
   Happily collecting the sweet sweet nectar. 
@@ -265,41 +275,42 @@ phase_flower_patch <- function(backpack) {
       
       look_choice <- pick_option("\n  Your choice: ", 2)
       
-      # Chose to avoid the patch
       if (look_choice == 1) {
         narrate("
-  You find a smaller, less spectacular Lantana nearby.
+  You find a smaller, less spectacular Lantana flower nearby.
   Not as much nectar. But quiet. No dead bees. No old alarm smell.
   You forage alone and unbothered.")
         
         cat("\n  What will you do with this forage site?\n")
-        cat("  [1] Release a recruitment signal: tell nestmates about it\n")
+        cat("  [1] Release a recruitment signal: tell hivemates about it\n")
         cat("  [2] Mark it with a forage marker: tell others you visited and collected what is here\n")
         cat("  [3] Forage quietly with no signal at all\n")
         
         forage_choice <- pick_option("  > ", 3)
         
         if (forage_choice == 1) {
-          # recruit : nestmates come but less reward
           pheromone_used <- pick_from_backpack(backpack)
           if (pheromone_used %in% c("isopentyl_acetate", "hexyl_acetate", "z11_eicosen_1_ol")) {
             recruited_loudly <- TRUE
             if (pheromone_used == "isopentyl_acetate") beetle_risk <- TRUE
             narrate("
-  Nestmates arrive. 
+  Hivemates arrive. 
   Less nectar than the other patch, but safer... maybe?
   You notice some weaver ants in the area taking interest
   in the increased bee activity. They set up nearby. Watching.")
-            win_phase(
+            pts <- win_phase(
               "You foraged safely on a quieter patch. Colony gets less food but you are alive!",
               "Honey bees balance foraging costs and benefits continuously.
   Dead bee bodies near flowers are genuine risk cues. 
-  Bees may avoid flowers with alarm pheromone or dead nestmates present,
+  Bees may avoid flowers with alarm pheromone or dead hivemates present,
   even if the nectar is oh so sweet.
-  (Wang & Tan 2019, Section 3.1)"
+  (Wang & Tan 2019, Section 3.1)",
+              25, 0
             )
+            nectar_cache <- nectar_cache + pts
             return(list(
               backpack         = backpack,
+              nectar_cache     = nectar_cache,
               recruited_loudly = recruited_loudly,
               marked_flower    = FALSE,
               saw_dead_bee     = saw_dead_bee,
@@ -307,19 +318,23 @@ phase_flower_patch <- function(backpack) {
               quiet_patch      = TRUE
             ))
           } else if (pheromone_used == "two_heptanone") {
-            narrate("
-  You release the forage marker. It tells nestmates: visited, move along.
-  They move along to find other sites. You forage alone. Efficient... but lonely.")
             marked_flower <- TRUE
-            win_phase(
+            narrate("
+  You release the forage marker. It tells hivemates: visited, move along.
+  They move along to find other sites. You forage alone. Efficient... but lonely.
+                    Luckily, those that moved on found even better nectar!")
+            pts <- win_phase(
               "You marked the flower instead of recruiting. Correct use of 2-heptanone.",
               "2-Heptanone from the mandibular gland functions as a forage-marking
   pheromone. It tells other bees a flower has already been visited 
   and gives them an opportunity to go find other (possibly better) forage sources.
-  (Wang & Tan 2019, Section 2.1)"
+  (Wang & Tan 2019, Section 2.1)",
+              35, 0
             )
+            nectar_cache <- nectar_cache + pts
             return(list(
               backpack         = backpack,
+              nectar_cache     = nectar_cache,
               recruited_loudly = FALSE,
               marked_flower    = TRUE,
               saw_dead_bee     = saw_dead_bee,
@@ -327,18 +342,21 @@ phase_flower_patch <- function(backpack) {
               quiet_patch      = TRUE
             ))
           } else {
-            # Wrong pheromone...
             narrate("
-  You release your pheromone. It does not recruit nestmates effectively.
+  You release your pheromone. It does not recruit hivemates effectively.
   The signal drifts off. Nothing comes. You forage alone anyway.")
-            win_phase(
+            pts <- win_phase(
               "You survived but the pheromone you chose was not suited for recruitment.",
-              "Not all alarm pheromone compounds recruit nestmates. Isopentyl acetate
+              "Not all alarm pheromone compounds recruit hivemates. Isopentyl acetate
   and hexyl acetate are the primary recruiters. Other compounds serve
   different functions (Check out the hint/ fine print on the bottles!). 
-  (Wang & Tan 2019, Table 1)")
+  (Wang & Tan 2019, Table 1)",
+              10, 0
+            )
+            nectar_cache <- nectar_cache + pts
             return(list(
               backpack         = backpack,
+              nectar_cache     = nectar_cache,
               recruited_loudly = FALSE,
               marked_flower    = FALSE,
               saw_dead_bee     = saw_dead_bee,
@@ -348,7 +366,6 @@ phase_flower_patch <- function(backpack) {
           }
           
         } else if (forage_choice == 2) {
-          # Mark it: say I was here
           if ("two_heptanone" %in% names(backpack)) {
             marked_flower <- TRUE
             narrate("
@@ -361,14 +378,17 @@ phase_flower_patch <- function(backpack) {
   You do not have a forage marker in your backpack.
   You forage alone without signalling anything to anyone.")
           }
-          win_phase(
+          pts <- win_phase(
             "Quiet foraging complete. Low yield but no major issues.",
             "2-Heptanone marks visited flowers, improving colony foraging efficiency
   by preventing multiple bees from visiting the same depleted source.
-  (Wang & Tan 2019, Section 2.1)"
+  (Wang & Tan 2019, Section 2.1)",
+            15, 0
           )
+          nectar_cache <- nectar_cache + pts
           return(list(
             backpack         = backpack,
+            nectar_cache     = nectar_cache,
             recruited_loudly = FALSE,
             marked_flower    = marked_flower,
             saw_dead_bee     = saw_dead_bee,
@@ -377,18 +397,20 @@ phase_flower_patch <- function(backpack) {
           ))
           
         } else {
-          # Do NADA at quiet flower
           narrate("
   You forage quietly. No signals. No communication.
   Just you, the Lantana, and your thoughts.")
-          win_phase(
+          pts <- win_phase(
             "Silent foraging. Safe but minimal contribution to the colony.",
             "Honey bees use pheromone signals to coordinate foraging efficiently.
   Without any signal, foraging is uncoordinated and less productive.
-  (Wang & Tan 2019, Introduction)"
+  (Wang & Tan 2019, Introduction)",
+            10, 0
           )
+          nectar_cache <- nectar_cache + pts
           return(list(
             backpack         = backpack,
+            nectar_cache     = nectar_cache,
             recruited_loudly = FALSE,
             marked_flower    = FALSE,
             saw_dead_bee     = saw_dead_bee,
@@ -398,48 +420,47 @@ phase_flower_patch <- function(backpack) {
         }
         
       } else {
-        # Saw dead bee. bold choise and landed anyways
         narrate("
   You land anyway. The nectar really is oh so sweet!
   The dead bee smell is old. You're probably fine... right?")
       }
     }
     
-    ########################
-    # Landed on main flower 
     cat("
-  You landed. The nectar is quite wonderful.
+  You landed. The nectar is quite wonderful. Best stuff within a mile.
   What will you do with this forage site?
     ")
-    cat("  [1] Release a pheromone: recruit nestmates to this patch\n")
+    cat("  [1] Release a pheromone: recruit hivemates to this patch\n")
     cat("  [2] Release a pheromone: mark it as visited\n")
     cat("  [3] Forage quietly with no signal at all\n")
     cat("  [4] Check your backpack\n")
     
-    forage_choice <- pick_option("\n  Your choice: ", 4) #check backpack
+    forage_choice <- pick_option("\n  Your choice: ", 4)
     
     if (forage_choice == 4) {
       show_backpack(backpack)
       cat("\n  Now what?\n")
-      cat("  [1] Recruit nestmates\n")
+      cat("  [1] Recruit hivemates\n")
       cat("  [2] Mark as visited\n")
       cat("  [3] Forage quietly\n")
       forage_choice <- pick_option("  > ", 3)
     }
     
     if (forage_choice == 1) {
-      # Recruit
       pheromone_used <- pick_from_backpack(backpack)
       
       if (pheromone_used == "nothing") {
         narrate("  You decide against releasing anything. You forage alone.")
-        win_phase(
+        pts <- win_phase(
           "Quiet foraging. Safe for now.",
           "Without recruitment signals, foraging is uncoordinated and lacks efficiency.
-  (Wang & Tan 2019, Introduction)"
+  (Wang & Tan 2019, Introduction)",
+          20, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = FALSE,
           marked_flower    = FALSE,
           saw_dead_bee     = saw_dead_bee,
@@ -448,7 +469,6 @@ phase_flower_patch <- function(backpack) {
         ))
       }
       
-      # RECRUIT pheromone
       if (pheromone_used %in% c("isopentyl_acetate", "hexyl_acetate",
                                 "z11_eicosen_1_ol", "benzyl_acetate")) {
         recruited_loudly <- TRUE
@@ -458,18 +478,20 @@ phase_flower_patch <- function(backpack) {
   The prime stop is swept clean! SO much good forage collected.
 
   BUT you notice movement near the flowers....
-  One or two weaver ants. Watching the increased bee activity.
-  They are patient. They are waiting.")
-        win_phase(
-          "Efficient foraging! Colony is well fed. But, something noticed your signal.",
+  One or two weaver ants. Watching the increased bee activity.")
+        pts <- win_phase(
+          "Efficient foraging! Colony is well fed. But, something noticed your signal...",
           "Recruitment pheromones like isopentyl acetate increase foraging efficiency
   but also increase activity that predators can detect. Weaver ants use
   bee alarm pheromone as a kairomone. They may eavesdrop on bee signals to
   locate prey. Increased bee traffic can also increase this predator interest.
-  (Wang & Tan 2019, Section 3.1)"
+  (Wang & Tan 2019, Section 3.1)",
+          50, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = TRUE,
           marked_flower    = FALSE,
           saw_dead_bee     = saw_dead_bee,
@@ -477,25 +499,27 @@ phase_flower_patch <- function(backpack) {
           quiet_patch      = FALSE
         ))
         
-        # marked it as foraged.. move along
       } else if (pheromone_used == "two_heptanone") {
         narrate("
   You release 2-heptanone at the best flower patch this side of the Mississippi!
-  It smells faintly cheesy. Your nestmates, smellin it,
+  It smells faintly cheesy. Your hivemates, smellin it,
   interpret it correctly: visited, move along.
   They move along. To other, possibly worse, flowers.
   You forage alone on this spectacular patch. How rude.")
         marked_flower <- TRUE
-        win_phase(
+        pts <- win_phase(
           "You marked the BEST flower as already visited. Oops!
           There is no way you can forage ALL this nectar alone... guess the hive will miss out",
-          "2-Heptanone functions as a forage-marking pheromone telling nestmates
+          "2-Heptanone functions as a forage-marking pheromone telling hivemates
   to move on from a visited flower, not a recruitment signal. Using it
   at a rich patch is a costly mistake for colony foraging efficiency.
-  (Wang & Tan 2019, Section 2.1)"
+  (Wang & Tan 2019, Section 2.1)",
+          10, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = FALSE,
           marked_flower    = TRUE,
           saw_dead_bee     = saw_dead_bee,
@@ -503,7 +527,6 @@ phase_flower_patch <- function(backpack) {
           quiet_patch      = FALSE
         ))
         
-        #super strong one cause could be fun
       } else if (pheromone_used == "gamma_octanoic_lactone") {
         narrate("
   You release gamma-octanoic lactone at your flower patch.
@@ -511,15 +534,18 @@ phase_flower_patch <- function(backpack) {
   Including the ones who were already on their way here.
   You have successfully repelled your entire workforce
   from the best nectar source of the season.")
-        win_phase(
-          "You repelled your own nestmates from a great food source. The colony is hungry.",
+        pts <- win_phase(
+          "You repelled your own hivemates from a great food source. The colony is hungry.",
           "Gamma-octanoic lactone is highly repellent to foragers at food sources.
   It evolved in giant honey bee species to keep competitors away.
   Using it at your own patch is spectacularly counterproductive.
-  (Wang & Tan 2019, Section 2.2)"
+  (Wang & Tan 2019, Section 2.2)",
+          5, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = FALSE,
           marked_flower    = FALSE,
           saw_dead_bee     = saw_dead_bee,
@@ -532,15 +558,18 @@ phase_flower_patch <- function(backpack) {
     if (forage_choice == 2) {
       pheromone_used <- pick_from_backpack(backpack)
       
-      if (pheromone_used == "nothing") { # do nada
+      if (pheromone_used == "nothing") {
         narrate("  You decide not to mark it. You forage alone in silence.")
-        win_phase(
+        pts <- win_phase(
           "No smell, no consequences. Yet...",
           "Silent foraging avoids attracting predators but also misses
-  opportunities for colony coordination! (Wang & Tan 2019, Introduction)"
+  opportunities for colony coordination! (Wang & Tan 2019, Introduction)",
+          15, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = FALSE,
           marked_flower    = FALSE,
           saw_dead_bee     = saw_dead_bee,
@@ -553,7 +582,7 @@ phase_flower_patch <- function(backpack) {
         marked_flower <- TRUE
         narrate("
   You release 2-heptanone at the best flower patch this side of the Mississippi!
-  It smells faintly cheesy. Your nestmates, smellin it,
+  It smells faintly cheesy. Your hivemates, smellin it,
   interpret it correctly: visited, move along.
   They move along. To other, possibly worse, flowers.
   You forage alone on this spectacular patch. How rude.
@@ -562,7 +591,7 @@ phase_flower_patch <- function(backpack) {
   is working flowers nearby. You can detect something faintly
   chemical about it. An unfamiliar compound drifting your way.")
         
-        win_phase(
+        pts <- win_phase(
           "Flower marked correctly. You forage alone and undisturbed. For now.",
           "2-Heptanone as a forage marker keeps the patch uncrowded and
   reduces the chemical signals that could attract predators. 
@@ -571,10 +600,13 @@ phase_flower_patch <- function(backpack) {
   
   A. cerana can detect alarm compounds from other Apis species,
   including giant bees, showing inter-species eavesdropping.
-  (Wang & Tan 2019, Sections 2.1 and 2.2)"
+  (Wang & Tan 2019, Sections 2.1 and 2.2)",
+          10, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = FALSE,
           marked_flower    = TRUE,
           saw_dead_bee     = saw_dead_bee,
@@ -583,20 +615,22 @@ phase_flower_patch <- function(backpack) {
         ))
         
       } else {
-        # Wrong compound for marking
         narrate("
   You release your pheromone. It is NOT a forage marker.
-  Your nestmates receive a confusing signal and respond
+  Your hivemates receive a confusing signal and respond
   in various unhelpful ways. Some come. Some flee.
   You forage amid the chaos.")
-        win_phase(
+        pts <- win_phase(
           "Wrong compound for marking, but you survived the confusion.",
           "Different pheromone compounds serve specific functions. Using an
   alarm or recruitment compound when you mean to mark a flower
-  sends the wrong message entirely. (Wang & Tan 2019, Table 1)"
+  sends the wrong message entirely. (Wang & Tan 2019, Table 1)",
+          5, 0
         )
+        nectar_cache <- nectar_cache + pts
         return(list(
           backpack         = backpack,
+          nectar_cache     = nectar_cache,
           recruited_loudly = pheromone_used %in% c("isopentyl_acetate",
                                                    "hexyl_acetate",
                                                    "z11_eicosen_1_ol"),
@@ -609,20 +643,22 @@ phase_flower_patch <- function(backpack) {
     }
     
     if (forage_choice == 3) {
-      # Silent foraging
       narrate("
   You forage quietly. No signals. No communication.
   The nectar is excellent. You fill your baskets in peace.
-  No ants come. No nestmates come either.
+  No ants come. No hivemates come either.
   The colony gets a modest solo contribution.")
-      win_phase(
+      pts <- win_phase(
         "Silent foraging complete. Safe but uncoordinated.",
         "Foraging without signals avoids attracting predators but also
   limits colony efficiency. Honey bees balance these costs and benefits
-  constantly during foraging trips. (Wang & Tan 2019, Introduction)"
+  constantly during foraging trips. (Wang & Tan 2019, Introduction)",
+        10, 0
       )
+      nectar_cache <- nectar_cache + pts
       return(list(
         backpack         = backpack,
+        nectar_cache     = nectar_cache,
         recruited_loudly = FALSE,
         marked_flower    = FALSE,
         saw_dead_bee     = saw_dead_bee,
@@ -631,23 +667,19 @@ phase_flower_patch <- function(backpack) {
       ))
     }
     
-  } # END thee repeat
+  }
 }
 
 
 # ---- PHASE 2: Eek ... ants... or spider --------------------
-# ant kairomone eavesdropping, inter-species detection
-# cost of stinging, sit-and-wait predators
-# the predator depends on choices you made above
 
-phase_something_arrives <- function(backpack, phase1) {
+phase_something_arrives <- function(backpack, phase1, nectar_cache = 0) {
   
   recruited_loudly <- phase1$recruited_loudly
   marked_flower    <- phase1$marked_flower
   saw_dead_bee     <- phase1$saw_dead_bee
   quiet_patch      <- phase1$quiet_patch
   
-  # Here you get giant bee, spide, or ants based on phase 1 choices
   if (quiet_patch) {
     encounter <- "spider"
   } else if (recruited_loudly) {
@@ -662,7 +694,6 @@ phase_something_arrives <- function(backpack, phase1) {
     
     divider()
     
-    # ANTS
     if (encounter == "ants") {
       cat("
   Midmorning: The ambush...
@@ -670,15 +701,14 @@ phase_something_arrives <- function(backpack, phase1) {
   You are still foraging. The flower is spectacular.
 
   Then... you feel it. OW! Tiny mandibles on your rear leg.
-  A weaver ant. Just one. But you can see others waiting
-  in the twigs 20-30 cm away. They set up while you were busy... distracted!
+  A weaver ant. Just one. But you can see others waiting in the brush. 
+  They set up while you were busy... distracted!
 
   They were attracted by the activity your recruitment signal created.
-  They were waiting for exactly this moment.
 
   Now you have a choice... 
-  If you release alarm pheromone, YOUR nestmates will come.
-  But ants use bee alarm pheromone as a KAIROMONE.
+  If you release alarm pheromone, your hivemates will come.
+  But ants use bee alarm pheromone as a kairomone
   They will also come. Faster.
 
   What do you do?
@@ -706,39 +736,58 @@ phase_something_arrives <- function(backpack, phase1) {
         pheromone_used <- pick_from_backpack(backpack)
         
         if (pheromone_used == "nothing") {
-          choice <- 3  # fall through to stay still
+          choice <- 3
         } else if (pheromone_used == "isopentyl_acetate") {
           narrate("
   The banana scent explodes into the air! POOF!
-  Nestmates come running... they were already nearby from your recruitment!
+  Hivemates come running... they were already nearby from your recruitment!
   But the ants come FASTER. They also read that signal.
-  Three more ants arrive before your first nestmate does.
+  Three more ants arrive before your first hivemate does.
 
-  Your nestmates fight them off. Barely. Two nestmates are lost.
-  You escape, shaken, with a bruised leg and moral complications.")
-          return(win_phase(
+  Your hivemates fight them off. Barely. Two hivemates are lost.
+  The ants feast on stored nectar before retreating.
+  You escape, shaken, with a broken leg and hurt ego.")
+          pts <- win_phase(
             "You survived, but your alarm signal recruited the ants too.
-  Two nestmates are dead. The ants eavesdropped on your distress.",
+Two hivemates are dead. Ants raided stored nectar.",
             "Ants use bee alarm pheromone as a kairomone. They eavesdrop on
-  the bee's distress signal to locate and mob prey. Isopentyl acetate
-  recruits nestmates but also alerts nearby predators simultaneously.
-  (Wang & Tan 2019, Section 3.1)"
+the bee's distress signal to locate and mob prey. The colony paid
+dearly in both bees and food stores.
+(Wang & Tan 2019, Section 3.1)",
+            0, 30
+          )
+          nectar_cache <- nectar_cache + pts
+          return(list(
+            backpack         = backpack,
+            nectar_cache     = nectar_cache,
+            recruited_loudly = recruited_loudly,
+            marked_flower    = marked_flower,
+            saw_dead_bee     = saw_dead_bee
           ))
           
         } else if (pheromone_used %in% c("hexyl_acetate", "z11_eicosen_1_ol")) {
           narrate("
-  You release your recruiter. Nestmates arrive quickly!
-  they were already nearby from your earlier signal.
+  You release your recruiter. Hivemates arrive quickly!
+  They were already nearby from your earlier signal.
   The ant hesitates at the new chemical signal.
   The guards form a cluster. The ant retreats.
-  One nestmate lost in the scuffle.")
-          return(win_phase(
-            "Survived with fewer casualties than the alarm would have caused.
-  Hexyl acetate recruits without the full alarm blast that attracts more ants.",
+  One hivemate lost in the scuffle. Some nectar was sampled but not stolen.")
+          pts <- win_phase(
+            "Survived with fewer casualties than isopentyl would have caused.
+Hexyl acetate recruits without the full predator-attracting signal.",
             "Different recruitment compounds have different 'blast radii'.
-  Hexyl acetate recruits nestmates without the full predator-attracting
-  alarm signal of isopentyl acetate. 
-  (Wang & Tan 2019, Table 1)"
+Hexyl acetate recruits hivemates without the full predator-attracting
+alarm signal of isopentyl acetate. The ants were deterred faster.
+(Wang & Tan 2019, Table 1)",
+            0, 10
+          )
+          nectar_cache <- nectar_cache + pts
+          return(list(
+            backpack         = backpack,
+            nectar_cache     = nectar_cache,
+            recruited_loudly = recruited_loudly,
+            marked_flower    = marked_flower,
+            saw_dead_bee     = saw_dead_bee
           ))
           
         } else if (pheromone_used == "benzyl_acetate") {
@@ -749,11 +798,11 @@ phase_something_arrives <- function(backpack, phase1) {
   Two more ants arrive before any help does.")
           return(die(
             "The signal alerted the hive but not fast enough for you personally.
-  The ants had you surrounded before defenders arrived.",
+The ants had you surrounded before defenders arrived.",
             "Benzyl acetate primarily alerts bees at the hive entrance and
-  repels foragers. It is less effective as a long-range distress signal
-  than isopentyl acetate. Context and distance matter!
-  (Wang & Tan 2019, Section 2.1)"
+repels foragers. It is less effective as a long-range distress signal
+than isopentyl acetate. Context and distance matter!
+(Wang & Tan 2019, Section 2.1)"
           ))
           
         } else if (pheromone_used == "two_heptanone") {
@@ -764,10 +813,10 @@ phase_something_arrives <- function(backpack, phase1) {
   Your help leaves. The ant's friends arrive.")
           return(die(
             "You forage-marked the situation. The flower is thoroughly tagged.
-  Also you are dead.",
+Also you are dead.",
             "2-Heptanone is a forage marker, not a distress signal. It tells
-  nestmates to move away from a location... sxactly the wrong message
-  when you need them to come and help! (Wang & Tan 2019, Section 2.1)"
+hivemates to move away from a location... exactly the wrong message
+when you need them to come and help! (Wang & Tan 2019, Section 2.1)"
           ))
           
         } else if (pheromone_used == "gamma_octanoic_lactone") {
@@ -778,8 +827,8 @@ phase_something_arrives <- function(backpack, phase1) {
           return(die(
             "You cleared the field of allies. The ant appreciated the privacy.",
             "Gamma-octanoic lactone repels foragers from food sources.
-  Releasing it when you need help drives your nestmates away.
-  Wrong compound, catastrophic timing... (Wang & Tan 2019, Section 2.2)"
+Releasing it when you need help drives your hivemates away.
+Wrong compound, catastrophic timing... (Wang & Tan 2019, Section 2.2)"
           ))
         }
       }
@@ -787,11 +836,11 @@ phase_something_arrives <- function(backpack, phase1) {
       if (choice == 2) {
         return(die(
           "You waggle-danced at an ant. It was a beautiful performance.
-  The ant gave it 9/10. Then the friends waiting to ambush came along and they killed you.",
+The ant gave it 9/10. Then the friends waiting to ambush came along and they killed you.",
           "The waggle dance communicates food source locations and some danger
-  signals between bees and also works as an 'I-see-you' signal to SOME predators, not all.
-  It is not understood by ants and does not trigger rapid defensive recruitment 
-  the way alarm pheromone does.Chemical signals are faster and more specific. 
+signals between bees and also works as an 'I-see-you' signal to SOME predators, not all.
+It is not understood by ants and does not trigger rapid defensive recruitment 
+the way alarm pheromone does. Chemical signals are faster and more specific. 
           (Wang & Tan 2019, Introduction)"
         ))
       }
@@ -803,30 +852,29 @@ phase_something_arrives <- function(backpack, phase1) {
   More ants come. They did not need your signal. They have their own.")
         return(die(
           "Stoic to the end. The ants had their own communication system
-  and did not need your cooperation.",
+and did not need your cooperation.",
           "Staying silent prevents bee alarm pheromone from alerting more ants,
-  but ants use their own trail pheromones independently to coordinate attacks.
-  Silence is not a complete solution when predators communicate too.
-  (Wang & Tan 2019, Section 3.1)"
+but ants use their own trail pheromones independently to coordinate attacks.
+Silence is not a complete solution when predators communicate too.
+(Wang & Tan 2019, Section 3.1)"
         ))
       }
       
       if (choice == 4) {
         return(die(
           "You stung the ant. Noble. Way to go out with a fight.
-  Your barbed stinger is now lodged in the ant and you are
-  currently eviscerating yourself. You die defending a flower.
-  The ant also dies. A draw.",
+Your barbed stinger is now lodged in the ant and you are
+currently eviscerating yourself. You die defending a flower.
+The ant also dies. A draw.",
           "Apis cerana has a barbed stinger. Stinging an insect target means
-  the stinger becomes lodged and the bee dies in the process.
-  This sacrificial defence makes sense at the hive entrance where it
-  triggers alarm pheromone release to recruit nestmates, but alone
-  at a flower... eh noble but worth it? (Wang & Tan 2019, Introduction)"
+the stinger becomes lodged and the bee dies in the process.
+This sacrificial defence makes sense at the hive entrance where it
+triggers alarm pheromone release to recruit hivemates, but alone
+at a flower... eh noble but worth it? (Wang & Tan 2019, Introduction)"
         ))
       }
     }
     
-    # GIANT BEEEE
     if (encounter == "giant_bee") {
       cat("
   Midmorning: The visitor...
@@ -840,9 +888,8 @@ phase_something_arrives <- function(backpack, phase1) {
   You can detect something in the air... an unfamiliar compound.
   Gamma-octanoic lactone. You have never produced this yourself,
   but you recognise it. It is the alarm pheromone of the giant bees.
-  Your antennae are firing.
 
-  The paper calls this inter-species eavesdropping.
+  This is called inter-species eavesdropping.
   You can read their signal even though it is not meant for you.
 
   What do you do?
@@ -867,15 +914,23 @@ phase_something_arrives <- function(backpack, phase1) {
       if (choice == 1) {
         narrate("
   You leave. The giant bee has the flower.
-  You find another patch nearby, smaller, less spectacular.
-  But you are alive and your antennae are intact.")
-        return(win_phase(
+  You find another patch nearby, smaller, less spectacular.")
+        pts <- win_phase(
           "You correctly read an inter-species alarm signal and avoided conflict.",
           "A. cerana can detect and respond aversively to gamma-octanoic lactone,
-  which is only produced by giant honey bee species (A. dorsata, A. laboriosa).
-  This inter-species eavesdropping allows A. cerana to avoid situations
-  involving giant bees without direct confrontation.
-  (Wang & Tan 2019, Section 2.2)"
+which is only produced by giant honey bee species (A. dorsata, A. laboriosa).
+This inter-species eavesdropping allows A. cerana to avoid situations
+involving giant bees without direct confrontation.
+(Wang & Tan 2019, Section 2.2)",
+          15, 0
+        )
+        nectar_cache <- nectar_cache + pts
+        return(list(
+          backpack         = backpack,
+          nectar_cache     = nectar_cache,
+          recruited_loudly = recruited_loudly,
+          marked_flower    = marked_flower,
+          saw_dead_bee     = saw_dead_bee
         ))
       }
       
@@ -891,13 +946,22 @@ phase_something_arrives <- function(backpack, phase1) {
   its own keep-out signal at it.
   It is not impressed. It is, if anything, confused.
   It continues foraging. You retreat anyway.")
-          return(win_phase(
+          pts <- win_phase(
             "The giant bee was confused by its own signal coming from you.
-  It worked, barely, but really you should have just fled.",
+It worked, barely, but that was confusing for all involved.",
             "Gamma-octanoic lactone repels foragers from food sources and is
-  used by giant bee species. A. cerana can detect it but producing it
-  yourself is not a natural behaviour - fleeing is the ecologically
-  correct response to a giant bee. (Wang & Tan 2019, Section 2.2)"
+used by giant bee species. A. cerana can detect it but producing it
+yourself is not a natural behaviour - fleeing is the ecologically
+correct response to a giant bee. (Wang & Tan 2019, Section 2.2)",
+            10, 0
+          )
+          nectar_cache <- nectar_cache + pts
+          return(list(
+            backpack         = backpack,
+            nectar_cache     = nectar_cache,
+            recruited_loudly = recruited_loudly,
+            marked_flower    = marked_flower,
+            saw_dead_bee     = saw_dead_bee
           ))
         } else {
           narrate("
@@ -908,11 +972,11 @@ phase_something_arrives <- function(backpack, phase1) {
   that is simply not interested.")
           return(die(
             "You pheromone-signalled at a giant bee until it accidentally
-  sat on you. It did not notice.",
+sat on you. It did not notice.",
             "A. dorsata is significantly larger than A. cerana. Chemical signals
-  that work between nestmates or against smaller predators do not
-  constitute a viable defence against a giant bee competitor.
-  Avoidance is the ecologically appropriate response. (Section 2.2)"
+that work between hivemates or against smaller predators do not
+constitute a viable defence against a giant bee competitor.
+Avoidance is the ecologically appropriate response. (Section 2.2)"
           ))
         }
       }
@@ -924,16 +988,15 @@ phase_something_arrives <- function(backpack, phase1) {
   specifically. This was a poor decision.")
         return(die(
           "You ignored an inter-species alarm signal from a bee three times
-  your size. It did not end well.",
+your size. It did not end well.",
           "The aversive response of A. cerana to gamma-octanoic lactone is
-  adaptive - it prevents costly confrontations with giant bees over
-  food sources. Ignoring inter-species chemical signals has real costs.
-  (Wang & Tan 2019, Section 2.2)"
+adaptive - it prevents costly confrontations with giant bees over
+food sources. Ignoring inter-species chemical signals has real costs.
+(Wang & Tan 2019, Section 2.2)"
         ))
       }
     }
     
-    # SPIDER 
     if (encounter == "spider") {
       cat("
   Midmorning: The Ambush!
@@ -972,12 +1035,21 @@ phase_something_arrives <- function(backpack, phase1) {
   You avoid the flower. The dead bee was a warning and you read it.
   You find a nearby flower with less nectar but no spider.
   You forage carefully and head home with a modest load.")
-        return(win_phase(
+        pts <- win_phase(
           "You correctly used the dead bee as a risk cue and avoided the predator.",
           "Honey bees avoid flowers with dead bee bodies or residual alarm pheromone.
-  Dead bodies are honest signals of predation risk at a specific location.
-  This avoidance behaviour is ecologically adaptive and well documented.
-  (Wang & Tan 2019, Section 3.1)"
+Dead bodies are honest signals of predation risk at a specific location.
+This avoidance behaviour is ecologically adaptive and well documented.
+(Wang & Tan 2019, Section 3.1)",
+          12, 0
+        )
+        nectar_cache <- nectar_cache + pts
+        return(list(
+          backpack         = backpack,
+          nectar_cache     = nectar_cache,
+          recruited_loudly = recruited_loudly,
+          marked_flower    = marked_flower,
+          saw_dead_bee     = saw_dead_bee
         ))
       }
       
@@ -988,11 +1060,11 @@ phase_something_arrives <- function(backpack, phase1) {
   It is faster.")
         return(die(
           "The dead bee was telling you something. You did not listen.
-  You are now also telling something to the next bee.",
+You are now also telling something to the next bee.",
           "Dead bee bodies near flowers serve as reliable indicators of
-  predation risk. Bees that ignore these cues face significantly
-  higher predation rates. The dead bee was an honest signal.
-  (Wang & Tan 2019, Section 3.1)"
+predation risk. Bees that ignore these cues face significantly
+higher predation rates. The dead bee was an honest signal.
+(Wang & Tan 2019, Section 3.1)"
         ))
       }
       
@@ -1003,12 +1075,11 @@ phase_something_arrives <- function(backpack, phase1) {
           return(die(
             "You released nothing and landed anyway. The spider was grateful.",
             "Without a chemical signal to warn hivemates or deter the predator,
-  landing near a sit-and-wait spider is simply dangerous.
-  (Wang & Tan 2019, Section 3.1)"
+landing near a sit-and-wait spider is simply dangerous.
+(Wang & Tan 2019, Section 3.1)"
           ))
         }
         
-        # Pheromones do not work on them
         narrate(paste0("
   You release your pheromone. The spider regards you with
   all eight of its eyes. It does not speak bee...
@@ -1016,30 +1087,27 @@ phase_something_arrives <- function(backpack, phase1) {
   It cares about movement and warmth and how tasty you look."))
         return(die(
           "Spiders are not responsive to bee alarm pheromone.
-  They are sit-and-wait predators that hunt by vibration and vision,
-  not chemical signals. The pheromone did nothing.",
+They are sit-and-wait predators that hunt by vibration and vision,
+not chemical signals. The pheromone did nothing.",
           "Bee alarm pheromones are effective signals within and between
-  bee species and some insect predators, BUT crab spiders are
-  ambush predators that do not respond to bee chemical signals.
-  Avoidance was the only viable option here. (Wang & Tan 2019, Section 3)"
+bee species and some insect predators, BUT crab spiders are
+ambush predators that do not respond to bee chemical signals.
+Avoidance was the only viable option here. (Wang & Tan 2019, Section 3)"
         ))
       }
     }
     
-  } # end repeat
+  }
 }
 
 
 # ---- PHASE 3: Goin home -----------------------------
-# Dendrobium orchid (Section 4.2), Pachysandra flower (Section 4.1) 
-# context-dependent learning (Section 4.3)
 
-phase_journey_home <- function(backpack, phase1) {
+phase_journey_home <- function(backpack, phase1, nectar_cache = 0) {
   
   beetle_risk <- phase1$beetle_risk
-  hornet_alerted <- FALSE  # TRUE if player disturbs the orchid...
+  hornet_alerted <- FALSE
   
-  # Dendrobium orchid 
   repeat {
     
     divider()
@@ -1086,14 +1154,16 @@ phase_journey_home <- function(backpack, phase1) {
   You make a mental note: that flower smells like alarm pheromone
   and has a hornet on it. Both of these are bad signs.
   You will tell no one about this flower.")
-      win_phase(
+      pts <- win_phase(
         "You avoided the orchid encounter cleanly. Hornet not alerted.",
         "Dendrobium sinense produces compounds including benzyl acetate,
-  benzyl alcohol, and (Z)-11-eicosen-1-ol that mimic bee alarm pheromone
-  to attract Vespa velutina hornets as pollinators. The orchid benefits
-  from this mimicry.
-  (Wang & Tan 2019, Section 4.2)"
+benzyl alcohol, and (Z)-11-eicosen-1-ol that mimic bee alarm pheromone
+to attract Vespa velutina hornets as pollinators. The orchid benefits
+from this mimicry.
+(Wang & Tan 2019, Section 4.2)",
+        0, 0
       )
+      nectar_cache <- nectar_cache + pts
       break
     }
     
@@ -1103,15 +1173,17 @@ phase_journey_home <- function(backpack, phase1) {
   your alarm pheromone. Fascinating!
   Also... you have now flown directly toward a hornet.")
       hornet_alerted <- TRUE
-      win_phase(
+      pts <- win_phase(
         "The hornet has noticed you specifically.... It will follow you home.
-  Your day just got more complicated.",
+Your day just got more complicated.",
         "Dendrobium sinense mimics bee alarm pheromone to attract hornets
-  as pollinators. The five compounds identified (including benzyl acetate
-  and (Z)-11-eicosen-1-ol) are electrophysiologically active in hornet
-  antennae. Approaching this flower brings you into direct contact
-  with a hornet that is already chemically primed. (Section 4.2)"
+as pollinators. The five compounds identified (including benzyl acetate
+and (Z)-11-eicosen-1-ol) are electrophysiologically active in hornet
+antennae. Approaching this flower brings you into direct contact
+with a hornet that is already chemically primed. (Section 4.2)",
+        0, 0
       )
+      nectar_cache <- nectar_cache + pts
       break
     }
     
@@ -1120,14 +1192,15 @@ phase_journey_home <- function(backpack, phase1) {
       
       if (pheromone_used == "nothing") {
         narrate("  You fly past without releasing anything. Safe.")
-        win_phase(
+        pts <- win_phase(
           "Clean pass. No complications.",
-          "Sometimes no signal is the right signal. (Wang & Tan 2019)"
+          "Sometimes no signal is the right signal. (Wang & Tan 2019)",
+          0, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       }
       
-      # Any pheromone alerts the hornet
       narrate(paste0("
   You release your pheromone near the orchid.
   The hornet's antennae fire. Whatever you released, it overlaps
@@ -1135,19 +1208,20 @@ phase_journey_home <- function(backpack, phase1) {
   the hornet's full attention. It turns toward you.
   Oh boy... your day just got more complicated"))
       hornet_alerted <- TRUE
-      win_phase(
+      pts <- win_phase(
         "Your pheromone near the alarm-mimicking orchid alerted the hornet.
-  It will be at your hive entrance when you arrive.",
+It will be at your hive entrance when you arrive.",
         "The orchid's alarm-mimicking compounds prime the hornet's olfactory
-  system. Any additional bee pheromone released nearby adds to a signal
-  the hornet is already attending to. You have made yourself a target. A nice, nice target.
-  (Wang & Tan 2019, Section 4.2)"
+system. Any additional bee pheromone released nearby adds to a signal
+the hornet is already attending to. You have made yourself a target.
+(Wang & Tan 2019, Section 4.2)",
+        0, 0
       )
+      nectar_cache <- nectar_cache + pts
       break
     }
   }
   
-  # Pachysandra flower!! 
   repeat {
     
     divider()
@@ -1173,7 +1247,7 @@ phase_journey_home <- function(backpack, phase1) {
     cat("  [1] Avoid it! Alarm smell means danger\n")
     cat("  [2] Watch other bees first then decide... \n")
     cat("  [3] Land immediately! It smells like alarm BUT bees are fine\n")
-    cat("  [4] Release a pheromone to warn nestmates away from it\n")
+    cat("  [4] Release a pheromone to warn hivemates away from it\n")
     cat("  [5] Check your backpack\n")
     
     choice <- pick_option("\n  Your choice: ", 5)
@@ -1184,7 +1258,7 @@ phase_journey_home <- function(backpack, phase1) {
       cat("  [1] Avoid\n")
       cat("  [2] Watch first\n")
       cat("  [3] Land immediately\n")
-      cat("  [4] Warn nestmates away\n")
+      cat("  [4] Warn hivemates away\n")
       choice <- pick_option("  > ", 4)
     }
     
@@ -1193,14 +1267,16 @@ phase_journey_home <- function(backpack, phase1) {
   You avoid the flower. Alarm smell = danger. 
   You trust your instinct. The colony gets less food.
   You return home empty from this patch.")
-      win_phase(
+      pts <- win_phase(
         "You survived. The colony is hungry. The flower was actually fine.",
         "The innate response to alarm pheromone is avoidance. P. axillaris
-  exploits this by producing benzyl acetate, BUT bees that overcome
-  the innate avoidance through context-dependent learning gain access
-  to a reliable food source when others may be unavailable. Avoidance is safe but costly.
-  (Wang & Tan 2019, Sections 4.1 and 4.3)"
+exploits this by producing benzyl acetate, BUT bees that overcome
+the innate avoidance through context-dependent learning gain access
+to a reliable food source when others may be unavailable. Avoidance is safe but costly.
+(Wang & Tan 2019, Sections 4.1 and 4.3)",
+        5, 0
       )
+      nectar_cache <- nectar_cache + pts
       break
     }
     
@@ -1211,14 +1287,16 @@ phase_journey_home <- function(backpack, phase1) {
   The flower smells alarming... but doesn't SEEM alarming.
   You land. Context-dependent learning in action!
   You fill your baskets. The hive will be happy.")
-      win_phase(
+      pts <- win_phase(
         "Context-dependent learning. You gained information and gained food.",
         "Bees can learn to associate alarm pheromone compounds with food reward
-  when experienced in an appetitive context. Observing nestmates foraging
-  safely provides exactly this context. This explains why plants mimicking
-  alarm pheromone can still attract pollinators, and why benzyl acetate
-  appears in 38 plant families! (Wang & Tan 2019, Section 4.3)"
+when experienced in an appetitive context. Observing hivemates foraging
+safely provides exactly this context. This explains why plants mimicking
+alarm pheromone can still attract pollinators, and why benzyl acetate
+appears in 38 plant families! (Wang & Tan 2019, Section 4.3)",
+        40, 0
       )
+      nectar_cache <- nectar_cache + pts
       break
     }
     
@@ -1228,15 +1306,17 @@ phase_journey_home <- function(backpack, phase1) {
   You were mildly deceived by a plant...
   but landed anyways.
   You collect and continue home.")
-      win_phase(
+      pts <- win_phase(
         "Bold and rewarded. The plant's mimicry worked on you and got your attention!",
         "P. axillaris produces benzyl acetate as 95% of its floral volatile,
-  the same compound that is the primary alarm signal of A. cerana.
-  The plant benefits from attracting bees despite signalling danger.
-  The bee benefits from food when other sources may be scarce...
-  An odd but functional relationship.
-  (Wang & Tan 2019, Section 4.1)"
+the same compound that is the primary alarm signal of A. cerana.
+The plant benefits from attracting bees despite signalling danger.
+The bee benefits from food when other sources may be scarce...
+An odd but functional relationship.
+(Wang & Tan 2019, Section 4.1)",
+        38, 0
       )
+      nectar_cache <- nectar_cache + pts
       break
     }
     
@@ -1245,11 +1325,13 @@ phase_journey_home <- function(backpack, phase1) {
       
       if (pheromone_used == "nothing") {
         narrate("  You decide not to release anything and fly past.")
-        win_phase(
+        pts <- win_phase(
           "You passed the flower without interacting. Colony misses the food.",
           "Avoidance without signalling is safe but means the colony loses
-  access to a food source. (Wang & Tan 2019, Section 4.1)"
+access to a food source. (Wang & Tan 2019, Section 4.1)",
+          5, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       }
       
@@ -1261,30 +1343,33 @@ phase_journey_home <- function(backpack, phase1) {
   You have successfully destroyed your colony's access
   to a great food source.
   Well done.")
-        if (pheromone_used == "isopentyl_acetate") beetle_risk <- TRUE
-        win_phase(
-          "You warned nestmates away from a perfectly safe food source.
-  The colony will be hungry. The flower was fine.",
+        pts <- win_phase(
+          "You warned hivemates away from a perfectly safe food source.
+The colony will be hungry. The flower was fine.",
           "You smelled danger, and passed on that signal without looking around.
-  P. axillaris, the flower, produces this bee alarm chemical to ATTRACT you. 
-  Bees that overcome the innate avoidance through context-dependent learning gain access
-  to a reliable food source when others may be unavailable.
-  (Wang & Tan 2019, Table 1, Section 4.1)"
+P. axillaris, the flower, produces this bee alarm chemical to ATTRACT you. 
+Bees that overcome the innate avoidance through context-dependent learning gain access
+to a reliable food source when others may be unavailable.
+(Wang & Tan 2019, Table 1, Section 4.1)",
+          0, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       } else {
         narrate("
   You release your pheromone near the flower.
-  It does not strongly repel nestmates from this location.
+  It does not strongly repel hivemates from this location.
   They continue visiting the flower.
   You have achieved nothing except releasing a compound
   at a flower that was trying to attract you.")
-        win_phase(
+        pts <- win_phase(
           "No major consequence this time. The flower and your hivemates are fine.",
           "Not all pheromone compounds repel foragers at flowers. The specific
-  compounds that do this are isopentyl acetate and benzyl acetate.
-  Other compounds have different functions. (Wang & Tan 2019, Table 1)"
+compounds that do this are isopentyl acetate and benzyl acetate.
+Other compounds have different functions. (Wang & Tan 2019, Table 1)",
+          10, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       }
     }
@@ -1293,6 +1378,7 @@ phase_journey_home <- function(backpack, phase1) {
   
   return(list(
     backpack        = backpack,
+    nectar_cache    = nectar_cache,
     hornet_alerted  = hornet_alerted,
     beetle_risk     = beetle_risk
   ))
@@ -1300,10 +1386,8 @@ phase_journey_home <- function(backpack, phase1) {
 
 
 # ---- PHASE 4: Back at the hive... -------------------------
-# I-see-you signal, van der Vecht gland marking,
-# heat ball chemistry, hornet alarm pheromone compounds
 
-phase_hive_entrance <- function(backpack, phase3) {
+phase_hive_entrance <- function(backpack, phase3, nectar_cache = 0) {
   
   hornet_alerted <- phase3$hornet_alerted
   beetle_risk    <- phase3$beetle_risk
@@ -1375,66 +1459,74 @@ phase_hive_entrance <- function(backpack, phase3) {
   followed you home with intent. It marks the hive entrance
   with van der Vecht gland chemicals and leaves.")
           hive_marked <- TRUE
-          win_phase(
+          pts <- win_phase(
             "The signal alone was not enough. The hive has been marked.
-  More hornets will come tonight.... things are not looking good.",
+More hornets will come tonight.... things are not looking good.",
             "The I-see-you signal is effective against scouting hornets but
-  an already-agitated hornet requires stronger deterrence.
-  The van der Vecht gland marking recruits additional hornets to the
-  location. This is bad for your colony...(Section 3.2)"
+an already-agitated hornet requires stronger deterrence.
+The van der Vecht gland marking recruits additional hornets to the
+location. This is bad for your colony...(Section 3.2)",
+            0, 0
           )
+          nectar_cache <- nectar_cache + pts
         } else {
           narrate("
   The hornet hovers for a long time. Eventually it drifts away.
   Uncertain. Not worth the risk today. It knows you saw it scouting. Phew!")
-          win_phase(
+          pts <- win_phase(
             "The I-see-you signal alone worked this time. The hive is safe!",
             "The I-see-you abdomen shaking signal in A. cerana evolved specifically
-  to repel Vespa velutina hornets at the hive entrance. It is an honest
-  signal that communicates colony awareness and readiness to defend.
-  (Wang & Tan 2019, Section 3.2)"
+to repel Vespa velutina hornets at the hive entrance. It is an honest
+signal that communicates colony awareness and readiness to defend.
+(Wang & Tan 2019, Section 3.2)",
+            10, 0
           )
+          nectar_cache <- nectar_cache + pts
         }
         break
       }
       
-      # Add pheromone to the dance
       pheromone_used <- pick_from_backpack(backpack)
       
       if (pheromone_used == "nothing") {
         if (hornet_alerted) {
           hive_marked <- TRUE
           narrate("  The hornet marks the hive. You stood there and watched... oh boy.")
-          win_phase(
+          pts <- win_phase(
             "Hive marked by the scout. More hornets will come tonight.",
             "Without chemical backup, the I-see-you signal was insufficient
-  against an already-agitated hornet. (Section 3.2)"
+against an already-agitated hornet. (Section 3.2)",
+            0, 0
           )
+          nectar_cache <- nectar_cache + pts
         } else {
-          win_phase(
+          pts <- win_phase(
             "Your dance worked on a scouting hornet!",
             "The I-see-you signal deters scouting hornets effectively. 
-            Not worth the risk if they think you saw them. (Wang & Tan 2019, Section 3.2)"
+            Not worth the risk if they think you saw them. (Wang & Tan 2019, Section 3.2)",
+            10, 0
           )
+          nectar_cache <- nectar_cache + pts
         }
         break
       }
       
       if (pheromone_used %in% c("isopentyl_acetate", "benzyl_acetate",
                                 "hexyl_acetate", "z11_eicosen_1_ol")) {
-        if (pheromone_used == "isopentyl_acetate") beetle_risk <- TRUE
         narrate("
   The I-see-you signal combined with alarm pheromone pouring
   from the entrance is A CALL TO ARMS! Guards swarm out.
   The hornet retreats. Guards locate and remove the partial
   van der Vecht marking from the entrance. Chemical warfare, countered.")
-        win_phase(
+        pts <- win_phase(
           "Perfect defence. your colony is safe... for now.",
           "A. cerana combines the I-see-you behavioural signal with alarm pheromone
-  recruitment for maximum effectiveness against hornets. Guards can detect
-  and remove van der Vecht gland markings, preventing further recruitment
-  of hornets to the hive location. (Wang & Tan 2019, Section 3.2)"
+recruitment for maximum effectiveness against hornets. Guards can detect
+and remove van der Vecht gland markings, preventing further recruitment
+of hornets to the hive location. (Wang & Tan 2019, Section 3.2)",
+          25, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
         
       } else if (pheromone_used %in% c("two_heptanone", "gamma_octanoic_lactone")) {
@@ -1442,13 +1534,15 @@ phase_hive_entrance <- function(backpack, phase3) {
   You release your pheromone. Guards begin avoiding the entrance area.
   The hornet, now unimpeded, marks the hive.")
         hive_marked <- TRUE
-        win_phase(
+        pts <- win_phase(
           "Wrong compound. Guards avoided the entrance. The hornet could mark the hive effectively...",
           "Using avoidance or repellent compounds at the hive entrance drives
-  your own guards away rather than recruiting them. Compound selection
-  is critical in defensive contexts. Had you used a recruitment alarm, others may have come
-          and helped to fend off the marking by the hornet. (Wang & Tan 2019, Table 1)"
+your own guards away rather than recruiting them. Compound selection
+is critical in defensive contexts. Had you used a recruitment alarm, others may have come
+and helped to fend off the marking by the hornet. (Wang & Tan 2019, Table 1)",
+          0, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       }
     }
@@ -1459,46 +1553,51 @@ phase_hive_entrance <- function(backpack, phase3) {
       if (pheromone_used == "nothing") {
         narrate("  You release nothing. The hornet marks the hive.")
         hive_marked <- TRUE
-        win_phase(
+        pts <- win_phase(
           "You sat there... the hornet came forward and marked the hive. More will come.",
           "Failing to respond to a scouting hornet allows it to mark the hive
-  with van der Vecht gland chemicals, recruiting additional hornets. This is not good for you.
-  (Wang & Tan 2019, Section 3.2)"
+with van der Vecht gland chemicals, recruiting additional hornets. This is not good for you.
+(Wang & Tan 2019, Section 3.2)",
+          0, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       }
       
       if (pheromone_used %in% c("isopentyl_acetate", "benzyl_acetate",
                                 "hexyl_acetate", "z11_eicosen_1_ol")) {
-        if (pheromone_used == "isopentyl_acetate") beetle_risk <- TRUE
         narrate("
   The hornet sneaks into your hive, but your pheromone alerted others to the intrusion.
   Guards rush towards you and the hornet. 
-  THey form a heat ball around the hornet.
+  They form a heat ball around the hornet.
   Flight muscles vibrate. Temperature rises to 46 degrees C.
   The hornet is baked alive inside a ball of bees.
   It worked well, but was also energetically expensive for the colony.")
-        win_phase(
+        pts <- win_phase(
           "Heat ball success! Hornet dead.",
           "During heat ball formation both bees and hornets release alarm
-  pheromones simultaneously. The specific compounds have been identified:
-  isopentyl acetate, octyl acetate, benzyl acetate from bees; 2-heptanone,
-  2-nonanone, 2-undecanone from the hornet. The heat ball raises temperature
-  to 46 degrees C, which is lethal to the hornet but survivable by the bees.
-  (Wang & Tan 2019, Section 3.2)"
+pheromones simultaneously. The specific compounds have been identified:
+isopentyl acetate, octyl acetate, benzyl acetate from bees; 2-heptanone,
+2-nonanone, 2-undecanone from the hornet. The heat ball raises temperature
+to 46 degrees C, which is lethal to the hornet but survivable by the bees.
+(Wang & Tan 2019, Section 3.2)",
+          20, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
         
       } else if (pheromone_used %in% c("two_heptanone", "gamma_octanoic_lactone")) {
         narrate("
   Guards move away from the entrance. The hornet marks it uncontested.")
         hive_marked <- TRUE
-        win_phase(
+        pts <- win_phase(
           "Wrong compound use cleared the way for the hornet.
           Your hive is marked and more hornets will now come...",
           "Avoidance signals at the hive entrance drive defenders away.
-  (Wang & Tan 2019, Table 1)"
+(Wang & Tan 2019, Table 1)",
+          0, 0
         )
+        nectar_cache <- nectar_cache + pts
         break
       }
     }
@@ -1506,10 +1605,10 @@ phase_hive_entrance <- function(backpack, phase3) {
     if (choice == 3) {
       return(die(
         "You flew directly at a hornet three times your size.
-  Everyone admired your commitment. Honorable attampt....",
+Everyone admired your commitment. Honorable attempt....",
         "A single bee cannot overpower a hornet. Collective defence via
-  alarm pheromone recruitment and heat ball formation is the effective
-  strategy. Individual heroics are ecologically inefficient. (Section 3.2)"
+alarm pheromone recruitment and heat ball formation is the effective
+strategy. Individual heroics are ecologically inefficient. (Section 3.2)"
       ))
     }
     
@@ -1523,7 +1622,7 @@ phase_hive_entrance <- function(backpack, phase3) {
       
       cat("
   You can smell the van der Vecht marking from inside.
-  You know what it means. (The hornet marked your hive and it's friends will be back.
+  You know what it means. The hornet marked your hive and its friends will be back.
   Do you do anything about it?
 
   [1] Go back out and try to remove it\n")
@@ -1537,19 +1636,23 @@ phase_hive_entrance <- function(backpack, phase3) {
   Other guards join you and the marking is cleared.
   The hornets will not find you now!")
         hive_marked <- FALSE
-        win_phase(
+        pts <- win_phase(
           "You removed the van der Vecht marking. The hive is no longer flagged.",
           "Honey bees can detect and remove van der Vecht gland markings left
-  by scout hornets. This chemical counter-measure prevents the scout's
-  marking from recruiting additional hornets to the hive location. (Section 3.2)"
+by scout hornets. This chemical counter-measure prevents the scout's
+marking from recruiting additional hornets to the hive location. (Section 3.2)",
+          15, 0
         )
+        nectar_cache <- nectar_cache + pts
       } else {
-        win_phase(
+        pts <- win_phase(
           "The marking stays. More hornets are coming tonight.",
           "Van der Vecht gland chemicals from hornets recruit additional hornets
-  to a marked hive location. Ignoring the marking has serious consequences
-  for the colony. How lazy... how detrimental. (Wang & Tan 2019, Section 3.2)"
+to a marked hive location. Ignoring the marking has serious consequences
+for the colony. How lazy... how detrimental. (Wang & Tan 2019, Section 3.2)",
+          0, 0
         )
+        nectar_cache <- nectar_cache + pts
       }
       break
     }
@@ -1558,6 +1661,7 @@ phase_hive_entrance <- function(backpack, phase3) {
   
   return(list(
     backpack     = backpack,
+    nectar_cache = nectar_cache,
     beetle_risk  = beetle_risk,
     hive_marked  = hive_marked
   ))
@@ -1565,10 +1669,8 @@ phase_hive_entrance <- function(backpack, phase3) {
 
 
 # ---- PHASE 5: The end... dun dun DUNNNN ----------------------
-# small hive beetle attracted by isopentyl acetate,
-# the inevitable wax moth. Yay death for all
 
-phase_inside_hive <- function(backpack, phase4) {
+phase_inside_hive <- function(backpack, phase4, nectar_cache = 0) {
   
   beetle_risk <- phase4$beetle_risk
   hive_marked <- phase4$hive_marked
@@ -1582,7 +1684,6 @@ phase_inside_hive <- function(backpack, phase4) {
   ")
   press_enter()
   
-  # Beetle : heh heh 
   if (beetle_risk) {
     divider()
     cat("
@@ -1630,33 +1731,39 @@ phase_inside_hive <- function(backpack, phase4) {
   What were you thinking??
   The beetles are specifically attracted to this compound!
   You have made the infestation worse.")
-        win_phase(
+        pts <- win_phase(
           "Releasing isopentyl acetate attracted more beetles.",
           "Isopentyl acetate alone attracts small hive beetles to the hive entrance. 
           Releasing more of it when beetles are already present recruits 
           additional beetles along with the guard bees. 
           This is a documented and specific problem with
-  over-reliance on your favorite pheromone. (Wang & Tan 2019, Section 3.3)"
+over-reliance on your favorite pheromone. (Wang & Tan 2019, Section 3.3)",
+          0, 40
         )
+        nectar_cache <- nectar_cache + pts
       } else if (pheromone_used %in% c("hexyl_acetate", "z11_eicosen_1_ol",
                                        "benzyl_acetate")) {
         narrate("
   You release your pheromone. Guards are recruited.
   The beetles are not specifically attracted to this compound.")
-        win_phase(
+        pts <- win_phase(
           "Smart choice. You recruited guards without attracting more beetles.",
           "Not all alarm compounds attract small hive beetles equally.
-  Isopentyl acetate is the specific attractant. Using other recruitment
-  compounds avoids compounding the beetle problem. (Section 3.3)"
+Isopentyl acetate is the specific attractant. Using other recruitment
+compounds avoids compounding the beetle problem. (Section 3.3)",
+          0, 5
         )
+        nectar_cache <- nectar_cache + pts
       } else {
         narrate("
   Your pheromone does not help much here. The beetles get in.")
-        win_phase(
+        pts <- win_phase(
           "The beetles got in. The colony will deal with it.",
           "Small hive beetles are a significant parasite of bee colonies.
-  (Wang & Tan 2019, Section 3.3)"
+(Wang & Tan 2019, Section 3.3)",
+          0, 15
         )
+        nectar_cache <- nectar_cache + pts
       }
     }
     
@@ -1665,28 +1772,31 @@ phase_inside_hive <- function(backpack, phase4) {
   You join the physical defence. You push beetles away from
   the entrance. Some beetles get in anyway.
   The colony will survive this, but take significant damage.")
-      win_phase(
+      pts <- win_phase(
         "Physical defence helped, but some beetles got through.",
         "Honey bee colonies physically corral small hive beetles into
-  propolis prisons when they cannot be expelled. (Wang & Tan 2019, Section 3.3)"
+propolis prisons when they cannot be expelled. (Wang & Tan 2019, Section 3.3)",
+        0, 20
       )
+      nectar_cache <- nectar_cache + pts
     }
     
     if (choice == 3) {
       narrate("
   The guards are overwhelmed.
   The colony will deal with a significant infestation tonight.")
-      win_phase(
-        "The beetles establishe and the colony is alive, but hurting...",
+      pts <- win_phase(
+        "The beetles established and the colony is alive, but hurting...",
         "Small hive beetles are important parasites at both individual and
-  colony level. They are attracted to hive alarm pheromones, meaning
-  the bees' own defence signals can inadvertently recruit their parasites.
-  (Wang & Tan 2019, Section 3.3)"
+colony level. They are attracted to hive alarm pheromones, meaning
+the bees' own defence signals can inadvertently recruit their parasites.
+(Wang & Tan 2019, Section 3.3)",
+        0, 30
       )
+      nectar_cache <- nectar_cache + pts
     }
   }
   
-  # HIVE MARKED
   if (hive_marked) {
     divider()
     cat("
@@ -1702,9 +1812,9 @@ phase_inside_hive <- function(backpack, phase4) {
   your friends may still be alive...
   ")
     press_enter()
+    nectar_cache <- nectar_cache - 35
   }
   
-  # Death to all... the wax moth... sorry 
   divider()
   cat("
   Night falls... you have survived...
@@ -1717,43 +1827,90 @@ phase_inside_hive <- function(backpack, phase4) {
   A wax moth. 
   
   Just your luck, it has chosen your hive tonight. 
-  Its antennae detect your alarm pheromone perfectly.
-  Electrophysiologically it is firing on all channels.
-  It can smell everything you released today.
-
-  It does not care.
 
   It invades at night because your guards are slow and few.
   The alarm pheromone is not a credible threat at 2am.
 
-  You release alarm pheromone. Your nestmates stir groggily.
+  You release alarm pheromone. Your hivemates stir groggily.
   The moth is already inside.
 
   You release more. It does not matter.
   The moth saunters over to you... 
-  and...
+  and... you realize you will never be enough on your own. 
   
-  *DEATH*
+  *(ego) DEATH* 
   ")
+  
   press_enter()
   
   divider()
   cat("
   *** YOU DIED ***
 
-  Not from the ants, or the hornet, or the flower, or the beetle.
-  From a moth at 2am that couldn't care less about your pheromones from BEEtrice.
+  Not from ants, or hornets, or a dangerous flower, or hive beetles.
+  From the existential dread that a moth could still infiltrate your home in the middle of the night.
 
-  Your sister, who made completely different choices today, also died.
+  Another bee a hive over, who made completely different choices today, also died... just a different day. 
   
   As is life.
   
   The world is complicated.
   The moth always comes at night.
-
-  ~~ THE END ~~
   
-  Type  bee_adventure()  to play again.
+  ============================================================
+  ")
+  
+  divider()
+  cat("
+  *** FINAL REPORT ***
+  
+  You died. But your sacrifice mattered.
+  
+  NECTAR CACHE COLLECTED: ", nectar_cache, " / 140 points
+  ")
+  
+  if (nectar_cache <= 20) {
+    cat("  
+  RATING: Terrible Contribution 
+  Your hive will starve. The colony needed so much more. 
+  You failed them in every way.
+  ")
+  } else if (nectar_cache < 60) {
+    cat("  
+  RATING: Poor Contribution 
+  Your hive will struggle this winter. You did your best, but 
+  the colony needed more. Perhaps a braver approach next time?
+  ")
+  } else if (nectar_cache < 100) {
+    cat("  
+  RATING: Modest Contribution  
+  The colony will survive the season. Your foraging helped, but 
+  you played it safe. The hive is fed, at least.
+  ")
+  } else if (nectar_cache < 130) {
+    cat("  
+  RATING: Good Contribution
+  Your hive appreciates your work! You balanced risk and reward well.
+  ")
+  } else if (nectar_cache < 140) {
+    cat("  
+  RATING: Outstanding Contribution
+  Outstanding! You took smart risks and brought home the goods.
+  Your hive will thrive. The queen noticed you. Other bees sing your name!
+  ")
+  } else {
+    cat("  
+  RATING: LEGENDARY Contribution
+  WOW. You were a FORCE OF NATURE out there. Every choice counted.
+  Your sacrifice has bought this colony months of security.
+  You will be remembered.
+  ")
+  }
+  
+  cat("
+  ============================================================
+  
+  Type  bee_adventure()  to play again and try for a better score.
   ")
   press_enter()
 }
@@ -1774,6 +1931,11 @@ bee_adventure <- function() {
   
   A day in the life of a bee is challenging. You will encounter many obstacles,
   and many many choices. Choose wisely. Death awaits. 
+  
+  Every choice you make earns or loses points for your hive's nectar cache.
+  Bold choices earn more points, but risk triggering predators/parasites.
+  Safe choices earn fewer points, but avoid downstream costs.
+  Your final score reflects how much you helped your colony before death.
 
   If you die during a phase, that phase restarts.
 
@@ -1781,51 +1943,57 @@ bee_adventure <- function() {
   ")
   press_enter()
   
-  # Visit Beetrice once at the start only
+  nectar_cache <- 0
   backpack <- visit_perfumary()
   
-  # Forage
   p1 <- NULL
   repeat {
-    p1 <- phase_flower_patch(backpack)
-    if (!is.null(p1) && !isFALSE(p1)) break
+    p1 <- phase_flower_patch(backpack, nectar_cache)
+    if (!is.null(p1) && !isFALSE(p1)) {
+      nectar_cache <- p1$nectar_cache
+      break
+    }
     cat("\n  Restarting Phase 1...\n")
     press_enter()
   }
   
-  # Attack
   p2 <- NULL
   repeat {
-    p2 <- phase_something_arrives(p1$backpack, p1)
-    if (!is.null(p2) && !isFALSE(p2)) break
+    p2 <- phase_something_arrives(p1$backpack, p1, nectar_cache)
+    if (!is.null(p2) && !isFALSE(p2)) {
+      nectar_cache <- p2$nectar_cache
+      break
+    }
     cat("\n  Restarting Phase 2...\n")
     press_enter()
   }
   
-  # Goin home
   p3 <- NULL
   repeat {
-    p3 <- phase_journey_home(p1$backpack, p1)
-    if (!is.null(p3) && !isFALSE(p3)) break
+    p3 <- phase_journey_home(p1$backpack, p1, nectar_cache)
+    if (!is.null(p3) && !isFALSE(p3)) {
+      nectar_cache <- p3$nectar_cache
+      break
+    }
     cat("\n  Restarting Phase 3...\n")
     press_enter()
   }
   
-  # Hornet
   p4 <- NULL
   repeat {
-    p4 <- phase_hive_entrance(p3$backpack, p3)
-    if (!is.null(p4) && !isFALSE(p4)) break
+    p4 <- phase_hive_entrance(p3$backpack, p3, nectar_cache)
+    if (!is.null(p4) && !isFALSE(p4)) {
+      nectar_cache <- p4$nectar_cache
+      break
+    }
     cat("\n  Restarting Phase 4...\n")
     press_enter()
   }
   
-  # Beetles and always ends with Moth 
-  phase_inside_hive(p4$backpack, p4)
+  phase_inside_hive(p4$backpack, p4, nectar_cache)
   
   divider()
   cat("  Type  bee_adventure()  to play again.\n\n")
 }
 
-# run it run it run t
 bee_adventure()
