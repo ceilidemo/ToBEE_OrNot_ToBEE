@@ -23,7 +23,7 @@ Download this repository on your local computer and open it in R.Studio.
 Make sure your directory is set to the file location and run the following line!
 
 ```{r}
-source("game_script.R")
+source("bee_game.R")
 ```
 
 ## Read the paper here: 

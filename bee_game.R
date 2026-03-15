@@ -8,7 +8,7 @@
 # ---- Game functions ----------------------------------------
 
 press_enter <- function() {
-  invisible(readline(prompt = "\n  [ Press ENTER (return on mac) to continue... ] "))
+  invisible(readline(prompt = ""))
 }
 
 divider <- function() {
@@ -1901,8 +1901,8 @@ the bees' own defence signals can inadvertently recruit their parasites.
   } else {
     cat("  
   RATING: LEGENDARY Contribution
-  WOW. You were a FORCE OF NATURE out there. Every choice counted.
-  Your sacrifice has bought this colony months of security.
+  WOW. Spectacular work. Every choice counted.
+  Your sacrifice has bought your colony months of security.
   You will be remembered.
   ")
   }
